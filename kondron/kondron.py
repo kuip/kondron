@@ -8,11 +8,11 @@ import webbrowser
 
 
 class Kontrol:
-    def __init__(self, ip, port, user, passw, telnet_conn):
+    def __init__(self, ip, port, user, password, telnet_conn):
         self.ipaddr = ip
         self.port = port
         self.user = user
-        self.passw = passw
+        self.password = password
         self.tn = telnet_conn
 
         self.wait=0.1
@@ -20,7 +20,7 @@ class Kontrol:
         self.urls = dict()
         self.seqs = dict()
         self.var = 250
-        self.eol = b"\n"
+        self.eol = b"\r"
 
         # throttle (0 is off)
         # rudder (1..127) ; 64 middle ; < 64 == LEFT ; > 64 == RIGTH
@@ -29,18 +29,25 @@ class Kontrol:
         # settings (speed mode, inverted flying)
         self.state = {'time': self.wait, 'throttle': 0, 'rudder': 1, 'elevation': 1, 'aileron': 1, 'settings': 0}
 
+    def opentelnet(self):
+        print('url_for', self.url_for('set_params.cgi'))
+        res = requests.get(
+            self.url_for('set_params.cgi'),
+            params=dict(telnetd=1, save=1, reboot=1, **self.auth_params())
+        )
+        print('-- res', res)
 
     def init_telnet_connection(self):
-        # Will Authentication Option ; WILL + AUTHENTICATION
-        # Do Suppress Go Ahead ; DO + SGA
-        # Will Terminal Type ; WILL + TTYPE
-        # Will Negotiate About Window Size ; WILL + NAWS
-        # Will Terminal Speed ; WILL + TSPEED
-        # Will Remote Flow Control ; WILL + LFLOW
-        # Will Linemode ; WILL + LINEMODE
-        # Will New Environment Option ; WILL + NEW_ENVIRON
-        # Do Status ; DO + STATUS
-        # Will X Display Location ; WILL + XDISPLOC
+        # Will Authentication Option ; IAC + WILL + AUTHENTICATION
+        # Do Suppress Go Ahead ; IAC + DO + SGA
+        # Will Terminal Type ; IAC + WILL + TTYPE
+        # Will Negotiate About Window Size ; IAC + WILL + NAWS
+        # Will Terminal Speed ; IAC + WILL + TSPEED
+        # Will Remote Flow Control ; IAC + WILL + LFLOW
+        # Will Linemode ; IAC + WILL + LINEMODE
+        # Will New Environment Option ; IAC + WILL + NEW_ENVIRON
+        # Do Status ; IAC + DO + STATUS
+        # Will X Display Location ; IAC + WILL + XDISPLOC
         self.tn.sock.send(b"\xff\xfb\x25")
         self.tn.sock.send(b"\xff\xfd\x03")
         self.tn.sock.send(b"\xff\xfb\x18")
@@ -52,10 +59,10 @@ class Kontrol:
         self.tn.sock.send(b"\xff\xfd\x05")
         self.tn.sock.sendall(b"\xff\xfb\x23")
 
-        # Won't Echo ; WONT + ECHO
-        # Suboption Negotiate About Window Size ; SB + NAWS
-        # Suboption End ; SE
-        # Do Echo ; DO + ECHO
+        # Won't Echo ; IAC + WONT + ECHO
+        # Suboption Negotiate About Window Size ; IAC + SB + NAWS
+        # Suboption End ; IAC + SE
+        # Do Echo ; IAC + DO + ECHO
 
         self.tn.sock.send(b"\xff\xfc\x01")
         self.tn.sock.send(b"\xff\xfa\x1f\x00\xa7\x00\x1f")
@@ -93,7 +100,6 @@ class Kontrol:
             self.state['settings'],
             self.checksum()
         ])
-        print(abytes, list(abytes))
         return abytes
 
     def send_comm(self):
@@ -103,9 +109,23 @@ class Kontrol:
         print('--allm', allm)
 
         self.tn.sock.send(allm)
-        self.tn.sock.sendall(b"\n")
-        print(self.tn.read_very_eager())
+
+        # self.tn.sock.sendall(b"\n")
+
+        #print('-- sleep', self.state['time'])
         time.sleep(self.state['time'])
+        print('-- read_very_eager', self.tn.read_very_eager())
+
+        #print('-- sleep', self.state['time'])
+        #print('-- expect', self.tn.expect(['ttyAMA1\r\n#'.encode('ascii')], self.state['time']))
+
+        #print('-- read_until', self.tn.read_until('ttyAMA1\r\n#'.encode('ascii'), self.state['time']))
+
+        '''self.tn.sock.sendall(b"\xff\xfc\x01")
+        self.tn.sock.sendall(b"\xff\xfa\x1f\x00\xa7\x00\x1f")
+        self.tn.sock.sendall(b"\xff\xf0")
+        self.tn.sock.sendall(b"\xff\xfd\x01")
+        '''
 
     def seq_store(self, seqname, index=0):
         self.seqs[seqname] ={}
@@ -130,14 +150,14 @@ class Kontrol:
         if script in self.urls:
             return self.urls[script]
         url = 'http://{addr}:{port}/{script}'.format(
-            addr=self.ipaddr, port=self.port, script=script)
+            addr=self.ipaddr, port=self.port, script=script
+        )
         self.urls[script] = url
         return url
 
     def download(self, output, path):
         if output is None:
             output = os.path.basename(path)
-
         res = requests.get(
             self.url_for('get_record.cgi'),
             params=dict(path=path, json=1, **auth_params()),
